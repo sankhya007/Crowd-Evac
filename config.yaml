@@ -1,0 +1,108 @@
+# Crowd Simulation & Evacuation System Configuration
+
+simulation:
+  duration: 300.0  # seconds
+  time_step: 0.1   # seconds
+  seed: 42         # random seed for reproducibility
+
+environment:
+  width: 50.0      # meters
+  height: 50.0     # meters
+  grid_resolution: 0.5  # meters per cell
+  
+agents:
+  count: 500
+  speed_range: [0.8, 1.8]  # m/s
+  radius_range: [0.2, 0.4]  # meters
+  visibility_range: [3.0, 15.0]  # meters
+  panic_threshold: 0.3
+  panic_spread_radius: 5.0
+  panic_spread_rate: 0.1
+  max_panic_level: 1.0
+
+motion:
+  model: "hybrid"  # Options: "sfm", "rvo", "pathfinding", "hybrid"
+  sfm:
+    relaxation_time: 0.5
+    desired_speed_factor: 1.0
+    agent_strength: 2000.0
+    agent_range: 0.08
+    wall_strength: 2000.0
+    wall_range: 0.08
+    noise_factor: 0.1
+  rvo:
+    time_horizon: 2.0
+    neighbor_dist: 5.0
+    max_neighbors: 10
+  pathfinding:
+    algorithm: "astar"  # A* algorithm
+    replan_interval: 1.0  # seconds
+    congestion_weight: 0.3
+    hazard_weight: 0.5
+
+hazards:
+  fire:
+    enabled: true
+    start_time: 30.0
+    ignition_points: [[25.0, 25.0]]  # [x, y] coordinates
+    spread_rate: 0.05  # probability per timestep
+    damage_rate: 0.1   # damage per second in fire
+    growth_rate: 1.5   # intensity multiplier per second
+  smoke:
+    enabled: true
+    diffusion_rate: 0.3
+    visibility_reduction: 0.8
+    damage_rate: 0.02  # damage per second in smoke
+  exit_failures:
+    enabled: true
+    failure_times: [60.0, 120.0]  # times when exits fail
+    failure_exits: [1, 2]  # exit IDs that fail
+
+exits:
+  positions:
+    - [5.0, 5.0]
+    - [45.0, 5.0]
+    - [5.0, 45.0]
+    - [45.0, 45.0]
+  widths: [2.0, 2.0, 2.0, 2.0]
+  capacities: [100, 100, 100, 100]
+
+obstacles:
+  # List of rectangular obstacles [x, y, width, height]
+  rectangles:
+    - [20.0, 20.0, 10.0, 10.0]
+    - [15.0, 35.0, 5.0, 5.0]
+
+floorplan:
+  type: "none"  # Options: "none", "dxf", "image"
+  file_path: null
+  scale: 1.0  # pixels or units per meter
+  origin: [0, 0]
+
+visualization:
+  enabled: true
+  fps: 30
+  realtime: false
+  show_trajectories: true
+  show_panic_levels: true
+  show_hazards: true
+  video_export: true
+  video_path: "output/simulation.mp4"
+  heatmap_export: true
+  heatmap_path: "output/heatmaps"
+  # Trail/path visualization settings
+  trail_length: 50  # Number of position points to show in agent trails
+  show_all_trails: true  # Show trails for all agents (vs subset)
+  trail_alpha: 0.6  # Transparency of trails (0.0-1.0)
+
+analytics:
+  enabled: true
+  sampling_rate: 0.5  # seconds
+  export_csv: true
+  csv_path: "output/analytics.csv"
+  compute_heatmaps: true
+  bottleneck_threshold: 4.0  # agents per square meter
+
+output:
+  directory: "output"
+  save_final_state: true
