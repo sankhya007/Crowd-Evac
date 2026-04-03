@@ -56,3 +56,7 @@ output/
 # Optional local config
 
 config_local.yaml
+
+
+__pycache__/
+*.pyc
