@@ -2,7 +2,7 @@
 
 simulation:
   duration: 300.0  # seconds
-  time_step: 0.1   # seconds
+  time_step: 0.5  # seconds
   seed: 42         # random seed for reproducibility
 
 environment:

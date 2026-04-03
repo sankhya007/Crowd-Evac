@@ -6,6 +6,8 @@ Simulates fire spread, smoke diffusion, and dynamic exit failures
 import numpy as np
 from typing import List, Tuple, Dict
 
+from src import agent
+
 
 class FireCell:
     """Represents a fire cell in the grid."""
@@ -193,7 +195,11 @@ class HazardManager:
                 agent.take_damage(damage)
                 
                 # Reduce visibility
-                agent.visibility_range *= (1.0 - smoke_level * self.smoke_visibility_reduction)
+                # agent.visibility_range *= (1.0 - smoke_level * self.smoke_visibility_reduction)
+                # the visibility shrinks forever 
+                
+                base_visibility = 10.0
+                agent.visibility_range = base_visibility * (1.0 - smoke_level * self.smoke_visibility_reduction)
     
     def get_hazard_proximity(self, position: np.ndarray, radius: float = 5.0) -> float:
         """

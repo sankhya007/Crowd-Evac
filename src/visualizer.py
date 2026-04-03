@@ -17,11 +17,11 @@ class Visualizer:
     Handles real-time visualization and video export.
     """
     
-    def __init__(self, config: dict, environment):
+    def __init__(self, config: dict, environment, canvas=None):
         self.enabled = config.get('enabled', True)
-        self.fps = config.get('fps', 240)
+        self.fps = config.get('fps', 30)
         self.realtime = config.get('realtime', False)
-        self.show_trajectories = config.get('show_trajectories', True)
+        self.show_trajectories = config.get('show_trajectories', False) # Disabled by default for performance(for now), can be enabled for detailed analysis
         self.show_panic_levels = config.get('show_panic_levels', True)
         self.show_hazards = config.get('show_hazards', True)
         self.video_export = config.get('video_export', False)  # Disabled by default
@@ -36,9 +36,13 @@ class Visualizer:
         
         # Setup figure with non-interactive backend to avoid GUI issues
         if self.enabled:
-            plt.ion()  # Interactive mode
-            self.fig, self.ax = plt.subplots(figsize=(14, 10))
-            self.fig.canvas.toolbar_visible = False  # Hide toolbar to avoid tkinter issues
+            # plt.ion()  # Interactive mode
+            if canvas:
+                self.fig = canvas.figure
+                self.ax = canvas.ax
+            else:
+                self.fig, self.ax = plt.subplots(figsize=(14, 10))
+            # self.fig.canvas.toolbar_visible = False  # Hide toolbar to avoid tkinter issues
             self.setup_plot()
             
             # Storage for animation frames
@@ -51,6 +55,16 @@ class Visualizer:
         """Initialize plot settings."""
         self.ax.set_xlim(0, self.environment.width)
         self.ax.set_ylim(0, self.environment.height)
+        self.ax.set_aspect("auto")
+        self.ax.margins(0)
+
+        self.fig.subplots_adjust(
+            left=0,
+            right=1,
+            bottom=0,
+            top=1
+        )
+        
         self.ax.set_aspect('equal')
         self.ax.set_xlabel('X (meters)')
         self.ax.set_ylabel('Y (meters)')
@@ -85,8 +99,22 @@ class Visualizer:
             return
         
         # Clear previous frame (except obstacles and exits)
-        self.ax.clear()
-        self.setup_plot()
+        self.ax.cla()
+        self.ax.set_xlim(0, self.environment.width)
+        self.ax.set_ylim(0, self.environment.height)
+        # redraw obstacles (walls)
+        for obstacle in self.environment.obstacles:
+            rect = Rectangle(
+                (obstacle.x, obstacle.y),
+                obstacle.width,
+                obstacle.height,
+                facecolor='gray',
+                edgecolor='black',
+                alpha=0.7
+            )
+            self.ax.add_patch(rect)
+        
+        self.ax.set_aspect('equal')
         
         # Draw exits
         for exit_obj in self.environment.exits:
@@ -244,9 +272,14 @@ class Visualizer:
                 fontsize=9
             )
         
+        # if show:
+            # plt.draw()
+            # plt.pause(0.001)
+            
         if show:
-            plt.draw()
-            plt.pause(0.001)
+            self.fig.canvas.draw()
+            self.fig.canvas.draw_idle()
+            self.fig.canvas.flush_events()
     
     def save_frame(self):
         """Save current frame for video export."""

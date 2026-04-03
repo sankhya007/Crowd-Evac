@@ -8,6 +8,8 @@ from typing import List, Dict, Tuple
 import csv
 from pathlib import Path
 
+from src import environment
+
 
 class AnalyticsCollector:
     """
@@ -302,3 +304,116 @@ class AnalyticsCollector:
                 'final_status': exit_obj.status
             }
         return stats
+
+    # # this might fuck up but if it does not that would be very much worth it 
+    def export_congestion_animation(self, grid, environment, filename="output/congestion_animation.gif"):
+
+        import numpy as np
+        import matplotlib.pyplot as plt
+        import imageio
+        import os
+
+        os.makedirs("output", exist_ok=True)
+
+        frames = []
+
+        for density in self.density_history:
+
+            fig, ax = plt.subplots(figsize=(8,8))
+
+            # draw density heatmap
+            im = ax.imshow(
+                density.T,
+                origin="lower",
+                cmap="hot",
+                interpolation="bilinear"
+            )
+
+            # ------------------------------------------------
+            # DRAW WALLS (obstacles)
+            # ------------------------------------------------
+
+            for obstacle in environment.obstacles:
+
+                rect = plt.Rectangle(
+                    (obstacle.x, obstacle.y),
+                    obstacle.width,
+                    obstacle.height,
+                    facecolor="gray",
+                    edgecolor="black",
+                    alpha=0.7
+                )
+
+                ax.add_patch(rect)
+
+            # ------------------------------------------------
+            # DRAW EXITS
+            # ------------------------------------------------
+
+            for exit_obj in environment.exits:
+
+                circle = plt.Circle(
+                    exit_obj.position,
+                    exit_obj.width / 2,
+                    facecolor="green",
+                    edgecolor="darkgreen",
+                    alpha=0.8
+                )
+
+                ax.add_patch(circle)
+
+            # ------------------------------------------------
+            # DRAW FIRE
+            # ------------------------------------------------
+
+            for ix in range(grid.nx):
+                for iy in range(grid.ny):
+
+                    if grid.fire_intensity[ix, iy] > 0:
+
+                        pos = grid.grid_to_world(ix, iy)
+
+                        ax.scatter(
+                            pos[0],
+                            pos[1],
+                            c="red",
+                            marker="*",
+                            s=80
+                        )
+
+            ax.set_title("Crowd Congestion Heatmap")
+            ax.set_xlim(0, environment.width)
+            ax.set_ylim(0, environment.height)
+
+            fig.canvas.draw()
+
+            image = np.array(fig.canvas.renderer.buffer_rgba())
+            frames.append(image)
+
+            plt.close(fig)
+
+        imageio.mimsave(filename, frames, fps=4)
+
+        print("Saved congestion heatmap animation:", filename)
+        
+    def compute_evacuation_score(self, total_agents, simulation_time):
+
+        evacuated = len(self.evacuation_times)
+        deaths = len(self.death_times)
+
+        evacuation_rate = evacuated / total_agents
+
+        death_penalty = deaths * 5
+
+        time_penalty = simulation_time / 10
+
+        score = 100 * evacuation_rate - death_penalty - time_penalty
+
+        score = max(0, min(100, score))
+
+        return {
+            "evacuation_rate": evacuation_rate,
+            "deaths": deaths,
+            "simulation_time": simulation_time,
+            "score": score
+        }

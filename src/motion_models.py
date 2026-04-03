@@ -368,7 +368,8 @@ class MotionController:
         self.rvo = RVO(config.get('rvo', {}))
         self.pathfinder = AStarPathfinder(grid)
         
-        self.replan_interval = config.get('pathfinding', {}).get('replan_interval', 1.0)
+        self.replan_interval = config.get('pathfinding', {}).get('replan_interval', 3.0)
+        #agents were doing the A* algo too often so changed that 1 to 3*
         self.congestion_weight = config.get('pathfinding', {}).get('congestion_weight', 0.3)
         self.hazard_weight = config.get('pathfinding', {}).get('hazard_weight', 0.5)
         

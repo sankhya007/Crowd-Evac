@@ -102,13 +102,36 @@ class Agent:
             
         self.panic_history.append(self.panic_level)
     
+    # def get_actual_speed(self) -> float:
+    #     """Get current speed accounting for panic."""
+    #     if self.panic_level > self.panic_threshold:
+    #         # Panic increases speed but becomes erratic
+    #         panic_factor = 1.0 + self.panic_level * 0.5
+    #         return min(self.max_speed, self.desired_speed * panic_factor)
+        
+    #     return self.desired_speed
+    
+    #temp change 
+    
     def get_actual_speed(self) -> float:
-        """Get current speed accounting for panic."""
+        """Get current speed accounting for panic and crowd density."""
+
+        # Base speed
+        speed = self.desired_speed
+
+        # Panic increases speed
         if self.panic_level > self.panic_threshold:
-            # Panic increases speed but becomes erratic
             panic_factor = 1.0 + self.panic_level * 0.5
-            return min(self.max_speed, self.desired_speed * panic_factor)
-        return self.desired_speed
+            speed = min(self.max_speed, self.desired_speed * panic_factor)
+
+        # Crowd density slowdown
+        density = len(self.perceived_agents)
+
+        if density > 3:
+            slowdown = max(0.4, 1 - density * 0.08)
+            speed *= slowdown
+
+        return speed
     
     def take_damage(self, damage: float):
         """Apply damage to agent's health."""

@@ -81,73 +81,101 @@ class SimulationEngine:
         self.analytics = AnalyticsCollector(config['analytics'])
         
         # Initialize visualizer
-        self.visualizer = Visualizer(config['visualization'], self.environment)
+        self.visualizer = Visualizer(
+            config['visualization'],
+            self.environment,
+            canvas=config.get("canvas", None)
+        )
         
         # Simulation state
         self.current_time = 0.0
         self.running = False
     
-    def _create_agents(self, agent_config: dict) -> List[Agent]:
-        """Create initial agent population distributed across entire map."""
+    # substracted because the spawing of the agents were spawnig in random spots rather than staying in the rooms 
+    
+    # def _create_agents(self, agent_config: dict) -> List[Agent]:
+    #     """Create agents randomly across the whole map avoiding obstacles."""
+
+    #     agents = []
+    #     count = agent_config['count']
+
+    #     for i in range(count):
+
+    #         speed = np.random.uniform(*agent_config['speed_range'])
+    #         radius = np.random.uniform(*agent_config['radius_range'])
+    #         visibility = np.random.uniform(*agent_config['visibility_range'])
+
+    #         # find valid spawn position
+    #         position = None
+    #         while position is None:
+    #             x = np.random.uniform(0, self.environment.width)
+    #             y = np.random.uniform(0, self.environment.height)
+
+    #             candidate = np.array([x, y])
+
+    #             if self.environment.grid.is_walkable(candidate):
+    #                 position = candidate
+
+    #         agent = Agent(
+    #             agent_id=i,
+    #             position=position,
+    #             desired_speed=speed,
+    #             radius=radius,
+    #             visibility_range=visibility,
+    #             panic_threshold=agent_config['panic_threshold']
+    #         )
+
+    #         agents.append(agent)
+
+    #     print(f"Created {len(agents)} agents distributed across map")
+    #     return agents
+       
+       
+    def _create_agents(self, agent_config):
+
         agents = []
-        count = agent_config['count']
-        
-        # Calculate grid for even distribution
-        grid_size = int(np.ceil(np.sqrt(count)))
-        cell_width = self.environment.width / grid_size
-        cell_height = self.environment.height / grid_size
-        
-        agents_created = 0
-        max_attempts = count * 10  # Prevent infinite loops
-        attempts = 0
-        
+        count = agent_config["count"]
+
+        valid_cells = []
+
+        for ix in range(self.environment.grid.nx):
+            for iy in range(self.environment.grid.ny):
+
+                if self.environment.grid.walkable[ix, iy]:
+
+                    pos = self.environment.grid.grid_to_world(ix, iy)
+
+                    # avoid spawning too close to exits
+                    too_close = False
+                    for exit_obj in self.environment.exits:
+                        if np.linalg.norm(pos - exit_obj.position) < 5:
+                            too_close = True
+                            break
+
+                    if not too_close:
+                        valid_cells.append(pos)
+
         for i in range(count):
-            # Try grid-based placement first for even distribution
-            grid_x = (i % grid_size) * cell_width + cell_width / 2
-            grid_y = (i // grid_size) * cell_height + cell_height / 2
-            
-            # Add randomization within cell
-            grid_x += np.random.uniform(-cell_width * 0.3, cell_width * 0.3)
-            grid_y += np.random.uniform(-cell_height * 0.3, cell_height * 0.3)
-            
-            # Random attributes
-            speed = np.random.uniform(*agent_config['speed_range'])
-            radius = np.random.uniform(*agent_config['radius_range'])
-            visibility = np.random.uniform(*agent_config['visibility_range'])
-            
-            # Try grid position first
-            position = np.array([grid_x, grid_y])
-            
-            # Check if position is valid (not in obstacle)
-            if self.environment.grid.is_walkable(position):
-                agent = Agent(
-                    agent_id=agents_created,
-                    position=position,
-                    desired_speed=speed,
-                    radius=radius,
-                    visibility_range=visibility,
-                    panic_threshold=agent_config['panic_threshold']
-                )
-                agents.append(agent)
-                agents_created += 1
-            else:
-                # Fallback: try random valid position
-                attempts += 1
-                if attempts < max_attempts:
-                    position = self.environment.get_random_valid_position(radius)
-                    if position is not None:
-                        agent = Agent(
-                            agent_id=agents_created,
-                            position=position,
-                            desired_speed=speed,
-                            radius=radius,
-                            visibility_range=visibility,
-                            panic_threshold=agent_config['panic_threshold']
-                        )
-                        agents.append(agent)
-                        agents_created += 1
-        
-        print(f"Created {len(agents)} agents distributed across map")
+
+            pos = valid_cells[np.random.randint(len(valid_cells))]
+
+            speed = np.random.uniform(*agent_config["speed_range"])
+            radius = np.random.uniform(*agent_config["radius_range"])
+            visibility = np.random.uniform(*agent_config["visibility_range"])
+
+            agent = Agent(
+                agent_id=i,
+                position=pos,
+                desired_speed=speed,
+                radius=radius,
+                visibility_range=visibility,
+                panic_threshold=agent_config["panic_threshold"]
+            )
+
+            agents.append(agent)
+
+        print(f"Created {len(agents)} agents distributed across walkable area")
+
         return agents
     
     def run(self):
@@ -176,7 +204,7 @@ class SimulationEngine:
                 print(f"Time: {self.current_time:.1f}s | Active: {active} | Evacuated: {evacuated}")
             
             # Visualization
-            if frame_count % max(1, int(1.0 / (self.dt * self.visualizer.fps))) == 0:
+            if frame_count % 3 == 0:
                 self.visualizer.render_frame(
                     self.agents,
                     self.hazard_manager,
@@ -184,6 +212,7 @@ class SimulationEngine:
                     self.analytics,
                     show=True
                 )
+                # recuced the frequency for performance, matlab redraw is expensive. 
             
             frame_count += 1
             
@@ -203,8 +232,56 @@ class SimulationEngine:
         print(f"Speed: {self.current_time / elapsed_time:.1f}x realtime")
         
         self._finalize()
+        
+        
+        
+    def step(self):
+        """
+        Advance simulation by one timestep (GUI mode)
+        """
+
+        if self.current_time >= self.duration:
+            return
+
+        # run one physics step
+        self._step()
+
+        # render frame for GUI canvas
+        if self.visualizer:
+            self.visualizer.render_frame(
+                self.agents,
+                self.hazard_manager,
+                self.current_time,
+                self.analytics,
+                show=True
+            )
     
     def _step(self):
+        
+        # ------------------------------------------------
+        # Terminal progress logging every 5 seconds
+        # ------------------------------------------------
+
+        if int(self.current_time) % 5 == 0:
+
+            if not hasattr(self, "_last_log_time"):
+                self._last_log_time = -1
+
+            if int(self.current_time) != self._last_log_time:
+
+                active = len([a for a in self.agents if a.alive and not a.evacuated])
+                evacuated = len([a for a in self.agents if a.evacuated])
+                dead = len([a for a in self.agents if not a.alive])
+
+                print(
+                    f"[SIM {self.current_time:6.1f}s] "
+                    f"Active:{active:4} | "
+                    f"Evacuated:{evacuated:4} | "
+                    f"Dead:{dead:3}"
+                )
+
+                self._last_log_time = int(self.current_time)
+                
         """Execute a single simulation step."""
         # Update spatial grid
         self.environment.grid.update_agent_positions(self.agents)
@@ -230,21 +307,33 @@ class SimulationEngine:
             )
             
             # Debug perception for first agent
-            if agent.id == 0 and int(self.current_time * 10) % 50 == 0:
-                print(f"  [DEBUG] Agent 0 can see {len(agent.perceived_exits)} exits (total={len(exits_info)}, visibility={agent.visibility_range:.1f}m)")
+            if False and agent.id == 0 and int(self.current_time * 10) % 50 == 0:
+                #dsabled the debug pringing here
+                #print(f"  [DEBUG] Agent 0 can see {len(agent.perceived_exits)} exits (total={len(exits_info)}, visibility={agent.visibility_range:.1f}m)")
                 if len(agent.perceived_exits) > 0:
                     print(f"         Perceived exits: {[e['id'] for e in agent.perceived_exits]}")
             
-            # Select target exit if none set
+            # Select nearest exit if none set
             if agent.goal is None:
-                target_exit_id = agent.select_target_exit()
-                if target_exit_id is not None:
-                    for exit_info in agent.perceived_exits:
-                        if exit_info['id'] == target_exit_id:
-                            agent.goal = exit_info['position'].copy()
-                            if agent.id == 0:
-                                print(f"  [DEBUG] Agent 0 selected exit {target_exit_id} at {agent.goal}")
-                            break
+
+                best_exit = None
+                best_score = float("inf")
+
+                for exit_obj in self.environment.exits:
+
+                    dist = np.linalg.norm(agent.position - exit_obj.position)
+
+                    congestion = exit_obj.agent_count
+
+                    score = dist + congestion * 3
+
+                    if score < best_score:
+                        best_score = score
+                        best_exit = exit_obj
+
+                if best_exit is not None:
+                    agent.goal = best_exit.position.copy()
+                
                 elif agent.id == 0 and int(self.current_time * 10) % 50 == 0:
                     print(f"  [DEBUG] Agent 0 cannot select exit (no perceived exits)")
             
@@ -270,7 +359,8 @@ class SimulationEngine:
             )
             
             # Debug: Print first agent's info occasionally
-            if agent.id == 0 and int(self.current_time * 10) % 10 == 0:
+            if False and agent.id == 0 and int(self.current_time * 10) % 10 == 0:
+                #debug printing disabled for perfomance boost(CPU was litrally vergeing close to death)
                 speed = np.linalg.norm(agent.velocity)
                 goal_str = f"({agent.goal[0]:.1f},{agent.goal[1]:.1f})" if agent.goal is not None else "None"
                 print(f"  Agent 0: pos=({agent.position[0]:.1f},{agent.position[1]:.1f}), vel={speed:.2f}m/s, goal={goal_str}")
@@ -308,56 +398,172 @@ class SimulationEngine:
     
     def _finalize(self):
         """Finalize simulation and generate outputs."""
-        print("\nGenerating analytics...")
-        
-        # Compute KPIs
-        kpis = self.analytics.compute_kpis(len(self.agents), self.current_time)
-        
-        # Print summary
-        print(self.analytics.generate_summary_report())
-        
-        # Detect bottlenecks
-        bottlenecks = self.analytics.detect_bottlenecks(self.environment.grid)
-        if bottlenecks:
-            print(f"\nDetected {len(bottlenecks)} bottleneck locations:")
-            for i, bn in enumerate(bottlenecks[:5]):
-                print(f"  {i+1}. Position ({bn['position'][0]:.1f}, {bn['position'][1]:.1f}), "
-                      f"Density: {bn['density']:.2f} agents/m²")
-        
-        # Export CSV
+
+        print("\nGenerating outputs...")
+
+        import os
+        import pandas as pd
+        import numpy as np
+
+        os.makedirs("output", exist_ok=True)
+        os.makedirs("output/heatmaps", exist_ok=True)
+
+        # ------------------------------------------------
+        # 1️⃣ TIME SERIES ANALYTICS CSV
+        # ------------------------------------------------
+
         self.analytics.export_to_csv()
-        print(f"\nTime series data exported to {self.analytics.csv_path}")
-        
-        # Generate heatmaps
+        print("Saved floorplan_analytics.csv")
+
+        # ------------------------------------------------
+        # 2️⃣ SUMMARY ANALYSIS CSV
+        # ------------------------------------------------
+
+        total_agents = len(self.agents)
+        evacuated = len([a for a in self.agents if a.evacuated])
+        dead = len([a for a in self.agents if not a.alive])
+        active = total_agents - evacuated - dead
+
+        avg_panic = np.mean([a.panic_level for a in self.agents])
+
+        summary = {
+            "total_agents": total_agents,
+            "evacuated_agents": evacuated,
+            "dead_agents": dead,
+            "active_agents": active,
+            "average_panic": avg_panic,
+            "simulation_time": self.current_time,
+            "num_exits": len(self.environment.exits),
+            "num_obstacles": len(self.environment.obstacles)
+        }
+
+        df_summary = pd.DataFrame([summary])
+        df_summary.to_csv("output/analysis.csv", index=False)
+
+        print("Saved analysis.csv")
+
+        # ------------------------------------------------
+        # 3️⃣ FLOORPLAN ANALYTICS CSV
+        # ------------------------------------------------
+
+        floorplan_data = []
+
+        for exit_obj in self.environment.exits:
+            floorplan_data.append({
+                "type": "exit",
+                "x": exit_obj.position[0],
+                "y": exit_obj.position[1],
+                "width": exit_obj.width,
+                "capacity": exit_obj.capacity
+            })
+
+        for obs in self.environment.obstacles:
+            floorplan_data.append({
+                "type": "obstacle",
+                "x": obs.x,
+                "y": obs.y,
+                "width": obs.width,
+                "height": obs.height
+            })
+
+        df_floor = pd.DataFrame(floorplan_data)
+        df_floor.to_csv("output/floorplan_structure.csv", index=False)
+
+        print("Saved floorplan_structure.csv")
+
+        # ------------------------------------------------
+        # 4️⃣ HEATMAPS
+        # ------------------------------------------------
+
         if self.analytics.compute_heatmaps:
-            density_heatmap = self.analytics.generate_heatmap('density')
+
+            density_heatmap = self.analytics.generate_heatmap("density")
+
             if density_heatmap is not None:
                 self.visualizer.export_heatmap(
                     density_heatmap,
-                    'Agent Density Heatmap',
-                    'output/heatmaps/density_heatmap.png'
+                    "Agent Density Heatmap",
+                    "output/heatmaps/density_heatmap.png"
                 )
-            
-            panic_heatmap = self.analytics.generate_heatmap('panic')
+
+            panic_heatmap = self.analytics.generate_heatmap("panic")
+
             if panic_heatmap is not None:
                 self.visualizer.export_heatmap(
                     panic_heatmap,
-                    'Panic Level Heatmap',
-                    'output/heatmaps/panic_heatmap.png'
+                    "Panic Heatmap",
+                    "output/heatmaps/panic_heatmap.png"
                 )
-        
-        # Export agent movement paths visualization
-        print("\nGenerating agent movement paths visualization...")
+                
+            # Generate congestion animation
+        self.analytics.export_congestion_animation(
+            self.environment.grid,
+            self.environment
+        )
+
+        # ------------------------------------------------
+        # 5️⃣ AGENT PATH VISUALIZATION
+        # ------------------------------------------------
+
         self.visualizer.export_movement_paths(
             self.agents,
-            'output/agent_paths.png',
+            "output/agent_paths.png",
             floorplan_path=self.floorplan_path
         )
-        
-        # Close visualizer
+
+        # ------------------------------------------------
+        # 6️⃣ BOTTLENECK DETECTION
+        # ------------------------------------------------
+
+        bottlenecks = self.analytics.detect_bottlenecks(self.environment.grid)
+
+        if bottlenecks:
+
+            df_bottleneck = pd.DataFrame(bottlenecks)
+            df_bottleneck.to_csv("output/bottlenecks.csv", index=False)
+
+            print("Saved bottlenecks.csv")
+            
+        # ------------------------------------------------
+        # HEATMAP GENERATION
+        # ------------------------------------------------
+
+        print("Generating heatmaps...")
+
+        density_heatmap = self.analytics.generate_heatmap("density")
+
+        if density_heatmap is not None:
+            self.visualizer.export_heatmap(
+                density_heatmap,
+                "Agent Density Heatmap",
+                "output/heatmaps/density_heatmap.png"
+            )
+
+        panic_heatmap = self.analytics.generate_heatmap("panic")
+
+        if panic_heatmap is not None:
+            self.visualizer.export_heatmap(
+                panic_heatmap,
+                "Panic Level Heatmap",
+                "output/heatmaps/panic_heatmap.png"
+            )
+
+        print("Heatmaps generated")
+
+        # ------------------------------------------------
+
         self.visualizer.close()
-        
-        print("\n" + "=" * 60)
-        print("All outputs generated successfully!")
-        print("Check 'output/agent_paths.png' to see how agents moved to exits!")
-        print("=" * 60)
+
+        print("\nAll outputs saved in /output/")
+
+        score = self.analytics.compute_evacuation_score(
+            len(self.agents),
+            self.current_time
+        )
+
+        import pandas as pd
+
+        df = pd.DataFrame([score])
+        df.to_csv("output/evacuation_score.csv", index=False)
+
+        print("Evacuation Score:", round(score["score"],2), "/ 100")
