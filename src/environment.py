@@ -62,13 +62,29 @@ class Obstacle:
     def get_repulsion_force(self, point: np.ndarray, strength: float, range_param: float) -> np.ndarray:
         """Calculate repulsion force from obstacle."""
         dist = self.distance_to_point(point)
+        
+        # Aggressive Ejection: If agent is structurally INSIDE the wall!
         if dist < 0.01:
-            dist = 0.01
+            x, y = point
+            left = x - self.x
+            right = (self.x + self.width) - x
+            top = y - self.y
+            bottom = (self.y + self.height) - y
+            
+            # push towards the closest exiting edge
+            min_dist = min(left, right, top, bottom)
+            if min_dist == left:   direction = np.array([-1.0, 0.0])
+            elif min_dist == right:  direction = np.array([1.0, 0.0])
+            elif min_dist == top:    direction = np.array([0.0, -1.0])
+            else:                    direction = np.array([0.0, 1.0])
+                
+            # Apply maximum expulsion power!
+            return direction * strength * 10.0
         
         if dist > range_param * 3:
             return np.zeros(2)
         
-        # Direction away from closest point on obstacle
+        # Direction away from closest point on obstacle limits
         x, y = point
         cx = np.clip(x, self.x, self.x + self.width)
         cy = np.clip(y, self.y, self.y + self.height)
