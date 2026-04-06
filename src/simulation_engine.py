@@ -136,24 +136,64 @@ class SimulationEngine:
         agents = []
         count = agent_config["count"]
 
-        valid_cells = []
 
+
+        # 1. Start BFS queue strictly with areas contiguous to exits!
+        valid_cells = []
+        visited = np.zeros((self.environment.grid.nx, self.environment.grid.ny), dtype=bool)
+        queue = []
+        
+        for exit_obj in self.environment.exits:
+            ex, ey = self.environment.grid.world_to_grid(exit_obj.position)
+            r = int(max(exit_obj.width, 2.0) / self.environment.grid.resolution)
+            for dx in range(-r, r+1):
+                for dy in range(-r, r+1):
+                    nx_c, ny_c = ex + dx, ey + dy
+                    if 0 <= nx_c < self.environment.grid.nx and 0 <= ny_c < self.environment.grid.ny:
+                        if self.environment.grid.walkable[nx_c, ny_c] and not visited[nx_c, ny_c]:
+                            queue.append((nx_c, ny_c))
+                            visited[nx_c, ny_c] = True
+                            
+        # 2. Expand uniformly outwards until bounded by static unpassable obstacles
+        head = 0
+        while head < len(queue):
+            cx, cy = queue[head]
+            head += 1
+            for dx, dy in [(1,0), (-1,0), (0,1), (0,-1)]:
+                nx_c, ny_c = cx + dx, cy + dy
+                if 0 <= nx_c < self.environment.grid.nx and 0 <= ny_c < self.environment.grid.ny:
+                    if not visited[nx_c, ny_c] and self.environment.grid.walkable[nx_c, ny_c]:
+                        visited[nx_c, ny_c] = True
+                        queue.append((nx_c, ny_c))
+
+        # 3. Consolidate mathematically contiguous map array 
         for ix in range(self.environment.grid.nx):
             for iy in range(self.environment.grid.ny):
 
-                if self.environment.grid.walkable[ix, iy]:
+                if visited[ix, iy]:
 
                     pos = self.environment.grid.grid_to_world(ix, iy)
 
-                    # avoid spawning too close to exits
+                    # Distribute agents ensuring they do not instant-clear at exit radius bounds
                     too_close = False
                     for exit_obj in self.environment.exits:
-                        if np.linalg.norm(pos - exit_obj.position) < 5:
+                        if np.linalg.norm(pos - exit_obj.position) < 3.0:
+
                             too_close = True
                             break
 
                     if not too_close:
                         valid_cells.append(pos)
+
+                        
+        if len(valid_cells) < 10:
+            print("Warning: Extreme tight map bounds mapped - reverting to standard random distributions.")
+            valid_cells.clear()
+            for ix in range(self.environment.grid.nx):
+                for iy in range(self.environment.grid.ny):
+                    if self.environment.grid.walkable[ix, iy]:
+                        valid_cells.append(self.environment.grid.grid_to_world(ix, iy))
+
 
         for i in range(count):
 

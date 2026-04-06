@@ -54,7 +54,9 @@ class Visualizer:
     def setup_plot(self):
         """Initialize plot settings."""
         self.ax.set_xlim(0, self.environment.width)
-        self.ax.set_ylim(0, self.environment.height)
+
+        self.ax.set_ylim(self.environment.height, 0)
+
         self.ax.set_aspect("auto")
         self.ax.margins(0)
 
@@ -101,7 +103,9 @@ class Visualizer:
         # Clear previous frame (except obstacles and exits)
         self.ax.cla()
         self.ax.set_xlim(0, self.environment.width)
-        self.ax.set_ylim(0, self.environment.height)
+
+        self.ax.set_ylim(self.environment.height, 0)
+
         # redraw obstacles (walls)
         for obstacle in self.environment.obstacles:
             rect = Rectangle(
@@ -313,7 +317,7 @@ class Visualizer:
         
         # Set up plot
         ax.set_xlim(0, self.environment.width)
-        ax.set_ylim(0, self.environment.height)
+        ax.set_ylim(self.environment.height, 0)
         ax.set_aspect('equal')
         ax.set_xlabel('X (meters)', fontsize=13, fontweight='bold')
         ax.set_ylabel('Y (meters)', fontsize=13, fontweight='bold')
@@ -327,8 +331,8 @@ class Visualizer:
                 img = Image.open(floorplan_path)
                 # Calculate scale to match simulation coordinates
                 img_array = np.array(img)
-                extent = [0, self.environment.width, 0, self.environment.height]
-                ax.imshow(img_array, extent=extent, origin='lower', alpha=0.3, aspect='auto')
+                extent = [0, self.environment.width, self.environment.height, 0]
+                ax.imshow(img_array, extent=extent, alpha=0.3, aspect='auto')
             except Exception as e:
                 print(f"  Warning: Could not load floorplan image: {e}")
         
@@ -508,15 +512,17 @@ class Visualizer:
         fig, ax = plt.subplots(figsize=(10, 8))
         
         # Create heatmap
-        extent = [0, self.environment.width, 0, self.environment.height]
+        extent = [0, self.environment.width, self.environment.height, 0]
         im = ax.imshow(
             heatmap_data.T,
-            origin='lower',
             extent=extent,
             cmap='hot',
             aspect='auto',
             interpolation='bilinear'
         )
+        
+        ax.set_xlim(0, self.environment.width)
+        ax.set_ylim(self.environment.height, 0)
         
         # Draw obstacles
         for obstacle in self.environment.obstacles:
