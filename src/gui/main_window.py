@@ -1,3 +1,5 @@
+import os
+
 from PyQt6.QtWidgets import (
     QApplication,
     QMainWindow,
@@ -27,25 +29,22 @@ class MainWindow(QMainWindow):
     def create_stat_box(self, title):
 
         box = QFrame()
-
-        box.setStyleSheet("""
-            background-color: #2b2b2b;
-            border-radius: 8px;
-            padding: 4px;
-            
-        """)
-        # margin-bottom: 6px;
+        box.setObjectName("StatCard")
             
         layout = QVBoxLayout(box)
+        layout.setContentsMargins(15, 15, 15, 15)
+        layout.setSpacing(5)
 
         title_label = QLabel(title)
+        title_label.setObjectName("StatTitle")
+        
         value_label = QLabel("0")
-
-        title_label.setStyleSheet("color: gray;")
-        value_label.setStyleSheet("font-size: 18px; font-weight: bold;")
+        value_label.setObjectName("StatValue")
 
         layout.addWidget(title_label)
         layout.addWidget(value_label)
+
+        box.setMinimumHeight(80)
 
         return box, value_label
 
@@ -56,9 +55,12 @@ class MainWindow(QMainWindow):
         self.setGeometry(100, 100, 1400, 800)
 
         layout = QHBoxLayout()
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(20)
 
         # Left control panel
         self.control_panel = ControlPanel()
+        self.control_panel.setMinimumWidth(400)
 
         # Map view
         self.map_view = MapView()
@@ -66,6 +68,8 @@ class MainWindow(QMainWindow):
         # Right panel
         self.right_panel = QWidget()
         right_layout = QVBoxLayout(self.right_panel)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+        right_layout.setSpacing(15)
 
         # Stats boxes
         self.sim_time_box, self.sim_time_label = self.create_stat_box("Sim Time")
@@ -86,14 +90,10 @@ class MainWindow(QMainWindow):
         # self.mini_map = QLabel()
         
         self.mini_map = QLabel("Mini Map")
-        self.mini_map.setFixedHeight(200)
+        self.mini_map.setFixedHeight(220)
         self.mini_map.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.mini_map.setStyleSheet("""
-        background-color:#1e1e1e;
-        color:white;
-        border-radius:8px;
-        """)
-        self.mini_map.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.mini_map.setObjectName("StatCard")
+        self.mini_map.setStyleSheet("background-color: #252526; border: 1px solid #3f3f46; border-radius: 8px;")
 
         right_layout.addWidget(self.mini_map)
 
@@ -105,8 +105,8 @@ class MainWindow(QMainWindow):
 
         self.fit_btn.clicked.connect(self.map_view.fit_to_window)
 
-        layout.addWidget(self.control_panel, 3)
-        layout.addWidget(self.map_view, 12)
+        layout.addWidget(self.control_panel, 4)
+        layout.addWidget(self.map_view, 11)
         layout.addWidget(self.right_panel, 3)
 
         container = QWidget()
@@ -119,6 +119,11 @@ class MainWindow(QMainWindow):
         self.control_panel.run_btn.clicked.connect(self.run_simulation)
         self.control_panel.add_exit_btn.clicked.connect(self.enable_exit_mode)
         self.control_panel.undo_exit_btn.clicked.connect(self.undo_exit)
+        self.control_panel.add_hazard_btn.clicked.connect(self.enable_hazard_mode)
+        self.control_panel.undo_hazard_btn.clicked.connect(self.undo_hazard)
+        
+        self.control_panel.add_wall_btn.clicked.connect(self.enable_wall_mode)
+        self.control_panel.clear_wall_btn.clicked.connect(self.clear_walls)
         
         self.setMinimumSize(1200, 700)
 
@@ -215,7 +220,30 @@ class MainWindow(QMainWindow):
 
         config["canvas"] = self.map_view
 
+        # Inject Hazards
+        config["hazards"] = config.get("hazards", {})
+        if "fire" not in config["hazards"]:
+            config["hazards"]["fire"] = {}
+            
+        config["hazards"]["fire"]["start_time"] = self.control_panel.fire_start_input.value()
+        
+        if len(self.map_view.hazards) > 0:
+            print("Using manual hazard points from GUI")
+            sim_hazards = []
+            for px, py in self.map_view.hazards:
+                sim_x, sim_y = float(px) / scale, float(py) / scale
+                sim_hazards.append([sim_x, sim_y])
+            config["hazards"]["fire"]["ignition_points"] = sim_hazards
+
         engine = SimulationEngine(config)
+
+        if len(self.map_view.user_walls) > 0:
+            print(f"Injecting {len(self.map_view.user_walls)} manual walls from GUI")
+            from src.environment import Obstacle
+            for (wx, wy, ww, wh) in self.map_view.user_walls:
+                sim_x, sim_y = float(wx) / scale, float(wy) / scale
+                sim_w, sim_h = float(ww) / scale, float(wh) / scale
+                engine.environment.add_obstacle(Obstacle(sim_x, sim_y, sim_w, sim_h))
 
         engine.visualizer = Visualizer(
             config["visualization"],
@@ -238,8 +266,7 @@ class MainWindow(QMainWindow):
 
             for i, (px, py) in enumerate(self.map_view.exits):
 
-                inv = self.map_view.ax.transData.inverted()
-                sim_x, sim_y = inv.transform((px, py))
+                sim_x, sim_y = float(px) / scale, float(py) / scale
 
                 engine.environment.add_exit(
                     Exit(
@@ -273,6 +300,24 @@ class MainWindow(QMainWindow):
         print("Simulation finished")
 
         engine._finalize()
+        
+        # OPEN HEATMAP IMAGE DIRECTLY
+        import platform
+        import subprocess
+
+        heatmap_dir = os.path.abspath("output/heatmaps")
+        if os.path.exists(heatmap_dir):
+            heatmap_file = os.path.join(heatmap_dir, "density_heatmap.png")
+            target = heatmap_file if os.path.exists(heatmap_file) else heatmap_dir
+            try:
+                if platform.system() == "Windows":
+                    os.startfile(target)
+                elif platform.system() == "Darwin":
+                    subprocess.call(["open", target])
+                else:
+                    subprocess.call(["xdg-open", target])
+            except Exception as e:
+                print("Could not auto-open heatmaps:", e)
         
     def update_stats(self, engine):
 
@@ -316,7 +361,6 @@ class MainWindow(QMainWindow):
 
         self.map_view.exit_mode = True
 
-
     def undo_exit(self):
 
         if self.map_view.exits:
@@ -325,3 +369,23 @@ class MainWindow(QMainWindow):
             print("Last exit removed")
 
             self.map_view.update()
+            
+    def enable_hazard_mode(self):
+        print("Hazard placement mode enabled")
+        self.map_view.hazard_mode = True
+
+    def undo_hazard(self):
+        if self.map_view.hazards:
+            self.map_view.hazards.pop()
+            print("Last hazard removed")
+            self.map_view.update()
+            
+    def enable_wall_mode(self):
+        print("Wall placement mode enabled")
+        self.map_view.wall_mode = True
+        self.map_view.exit_mode = False
+        self.map_view.hazard_mode = False
+
+    def clear_walls(self):
+        self.map_view.clear_all_walls()
+        print("All manual walls cleared")

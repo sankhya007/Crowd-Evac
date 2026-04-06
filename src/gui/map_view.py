@@ -9,7 +9,9 @@ class MapView(FigureCanvasQTAgg):
     def __init__(self):
 
         self.figure = Figure()
+        self.figure.patch.set_facecolor('#0f172a')
         self.ax = self.figure.add_subplot(111)
+        self.ax.set_facecolor('#ffffff')
 
         super().__init__(self.figure)
 
@@ -17,6 +19,15 @@ class MapView(FigureCanvasQTAgg):
 
         self.exits = []
         self.exit_mode = False
+
+        self.hazards = []
+        self.hazard_mode = False
+
+        self.user_walls = []
+        self.wall_patches = []
+        self.wall_mode = False
+        self.wall_start = None
+        self.temp_wall_patch = None
 
         # zoom limits
         self.min_zoom = 5
@@ -49,11 +60,7 @@ class MapView(FigureCanvasQTAgg):
 
         self.ax.clear()
 
-        self.ax.imshow(
-            img_array,
-            extent=[0, w, 0, h],
-            # origin="lower"
-        )
+        self.ax.imshow(img_array)
 
         self.ax.axis("off")
 
@@ -152,14 +159,38 @@ class MapView(FigureCanvasQTAgg):
             y = event.ydata
 
             self.exits.append((x, y))
+            # print("Exit added at:", x, y)
 
-            print("Exit added at:", x, y)
-
-            self.ax.scatter(x, y, c="red", s=80, zorder=5)
-
+            self.ax.scatter(x, y, c="#06b6d4", s=80, marker="s", zorder=5)
             self.draw_idle()
 
             self.exit_mode = False
+            return
+
+        # HAZARD PLACEMENT
+        if self.hazard_mode:
+
+            x = event.xdata
+            y = event.ydata
+
+            self.hazards.append((x, y))
+
+            self.ax.scatter(x, y, c="#f97316", s=100, marker="x", zorder=6)
+            self.draw_idle()
+
+            self.hazard_mode = False
+            return
+            
+        # WALL PLACEMENT
+        if self.wall_mode:
+            self.wall_start = (event.xdata, event.ydata)
+            from matplotlib.patches import Rectangle
+            self.temp_wall_patch = Rectangle(
+                (event.xdata, event.ydata), 0, 0, 
+                facecolor='#3b82f6', alpha=0.5, edgecolor='#1e3a8a',
+                linewidth=2, zorder=6
+            )
+            self.ax.add_patch(self.temp_wall_patch)
             return
 
         # PAN START
@@ -169,10 +200,46 @@ class MapView(FigureCanvasQTAgg):
 
     def on_mouse_release(self, event):
 
+        if self.wall_mode and self.wall_start and event.xdata:
+            x0, y0 = self.wall_start
+            x1, y1 = event.xdata, event.ydata
+            
+            min_x, max_x = min(x0, x1), max(x0, x1)
+            min_y, max_y = min(y0, y1), max(y0, y1)
+
+            if (max_x - min_x) > 2 and (max_y - min_y) > 2:
+                self.user_walls.append((min_x, min_y, max_x - min_x, max_y - min_y))
+                from matplotlib.patches import Rectangle
+                perm_wall = Rectangle(
+                    (min_x, min_y), max_x - min_x, max_y - min_y, 
+                    facecolor='#312e81', alpha=0.7, edgecolor='#06b6d4', 
+                    linewidth=1, zorder=5
+                )
+                self.ax.add_patch(perm_wall)
+                self.wall_patches.append(perm_wall)
+                
+            if self.temp_wall_patch:
+                self.temp_wall_patch.remove()
+            self.temp_wall_patch = None
+            self.wall_start = None
+            self.wall_mode = False
+            self.draw_idle()
+            return
+
         self.panning = False
         self.pan_start = None
 
     def on_mouse_move(self, event):
+    
+        if self.wall_mode and self.wall_start and self.temp_wall_patch and event.xdata:
+            x0, y0 = self.wall_start
+            w = event.xdata - x0
+            h = event.ydata - y0
+            
+            self.temp_wall_patch.set_width(w)
+            self.temp_wall_patch.set_height(h)
+            self.draw_idle()
+            return
 
         if not self.panning or event.xdata is None:
             return
@@ -228,4 +295,14 @@ class MapView(FigureCanvasQTAgg):
         self.ax.set_xlim(min(xs)-padding, max(xs)+padding)
         self.ax.set_ylim(min(ys)-padding, max(ys)+padding)
 
+        self.draw_idle()
+        
+    def clear_all_walls(self):
+        for p in self.wall_patches:
+            try:
+                p.remove()
+            except Exception:
+                pass
+        self.wall_patches = []
+        self.user_walls = []
         self.draw_idle()
